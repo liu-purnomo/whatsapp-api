@@ -1,0 +1,19 @@
+{
+  "name": "whatsapp-api",
+  "version": "1.0.0",
+  "description": "This is a simple REST API for WhatsApp",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js"
+  },
+  "keywords": [
+    "whatsapp",
+    "api",
+    "rest",
+    "api rest",
+    "rest api"
+  ],
+  "author": "hi@liupurnomo.com",
+  "license": "ISC"
+}
