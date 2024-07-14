@@ -23,7 +23,7 @@ app.use(express.urlencoded({ extended: true }));
 
 const server = require('http').createServer(app);
 const io = require('socket.io')(server);
-const port = process.env.PORT || 8000;
+const port = process.env.PORT || 3000;
 
 app.use('/assets', express.static(path.join(__dirname, 'client', 'assets')));
 
@@ -223,5 +223,5 @@ app.get('/', (req, res) => {
 connectToWhatsApp().catch((error) => console.log('Connection error:', error));
 
 server.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+  console.log(`Server is running on port ${port}`);
 });
