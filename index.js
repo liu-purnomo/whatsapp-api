@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const {
   default: makeWASocket,
   DisconnectReason,
@@ -24,10 +26,6 @@ const io = require('socket.io')(server);
 const port = process.env.PORT || 8000;
 
 app.use('/assets', express.static(path.join(__dirname, 'client', 'assets')));
-
-app.get('/scan', (req, res) => {
-  res.sendFile(path.join(__dirname, 'client', 'server.html'));
-});
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'client', 'index.html'));
@@ -122,8 +120,6 @@ function handleMessageUpsert({ messages, type }) {
   const message = messages[0];
   if (message.key.fromMe) return;
 
-  console.log(message, '<<<<<<<<<< this is the message');
-
   const textMessage =
     message.message.extendedTextMessage?.text || message.message.conversation;
   const senderId = message.key.remoteJid;
@@ -193,7 +189,7 @@ app.post('/send-message', async (req, res) => {
       });
     }
 
-    if (!token) {
+    if (!token || token !== process.env.TOKEN_KEY) {
       return res.status(403).json({
         status: false,
         response: 'Unauthorized access, please contact the owner',
@@ -225,6 +221,14 @@ app.post('/send-message', async (req, res) => {
     }
   } catch (err) {
     res.status(500).send(err);
+  }
+});
+
+app.get('/scan', (req, res) => {
+  if (isConnected()) {
+    res.sendFile(path.join(__dirname, 'client', 'server.html'));
+  } else {
+    res.sendFile(path.join(__dirname, 'client', 'client.html'));
   }
 });
 
