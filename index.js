@@ -8,7 +8,6 @@ const {
 } = require('@whiskeysockets/baileys');
 
 const log = require('pino');
-const { session } = { session: 'baileys_auth_info' };
 const { Boom } = require('@hapi/boom');
 const path = require('path');
 const express = require('express');
@@ -19,32 +18,27 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
 const server = require('http').createServer(app);
 const io = require('socket.io')(server);
 const port = process.env.PORT || 8000;
 
-app.use('/assets', express.static(__dirname + '/client/assets'));
+app.use('/assets', express.static(path.join(__dirname, 'client', 'assets')));
 
 app.get('/scan', (req, res) => {
-  res.sendFile('./client/server.html', {
-    root: __dirname,
-  });
+  res.sendFile(path.join(__dirname, 'client', 'server.html'));
 });
 
 app.get('/', (req, res) => {
-  res.sendFile('./client/index.html', {
-    root: __dirname,
-  });
+  res.sendFile(path.join(__dirname, 'client', 'index.html'));
 });
 
-//fungsi suara capital
-function capital(textSound) {
-  const arr = textSound.split(' ');
-  for (var i = 0; i < arr.length; i++) {
-    arr[i] = arr[i].charAt(0).toUpperCase() + arr[i].slice(1);
-  }
-  const str = arr.join(' ');
-  return str;
+// Function to capitalize words
+function capitalizeWords(text) {
+  return text
+    .split(' ')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 }
 
 const store = makeInMemoryStore({
@@ -52,149 +46,132 @@ const store = makeInMemoryStore({
 });
 
 let waSocket;
-let qr;
+let qrCode;
 let ioSocket;
 
 async function connectToWhatsApp() {
-  const { state, saveCreds } = await useMultiFileAuthState('stores');
-  let { version } = await fetchLatestBaileysVersion();
+  const { state, saveCreds } = await useMultiFileAuthState('auth_info');
+  const { version } = await fetchLatestBaileysVersion();
+
   waSocket = makeWASocket({
     auth: state,
     logger: log({ level: 'silent' }),
     version,
-    shouldIgnoreJid: (jid) => isJidBroadcast(jid),
+    shouldIgnoreJid: isJidBroadcast,
   });
+
   store.bind(waSocket.ev);
-  waSocket.multi = true;
+
   waSocket.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect } = update;
+    const { connection, lastDisconnect, qr } = update;
     if (connection === 'close') {
-      let reason = new Boom(lastDisconnect.error).output.statusCode;
-      switch (reason) {
-        case DisconnectReason.badSession:
-          console.log(
-            `Bad Session File, Please Delete ${session} and Scan Again`
-          );
-          waSocket.logout();
-          break;
-        case DisconnectReason.connectionClosed:
-          console.log('Connection closed, reconnecting....');
-          connectToWhatsApp();
-          break;
-        case DisconnectReason.connectionLost:
-          console.log('Connection Lost from Server, reconnecting...');
-          connectToWhatsApp();
-          break;
-        case DisconnectReason.connectionReplaced:
-          console.log(
-            'Connection Replaced, Another New Session Opened, Please Close Current Session First'
-          );
-          waSocket.logout();
-          break;
-        case DisconnectReason.loggedOut:
-          console.log(
-            `Device Logged Out, Please Delete ${session} and Scan Again.`
-          );
-          waSocket.logout();
-          break;
-        case DisconnectReason.restartRequired:
-          console.log('Restart Required, Restarting...');
-          connectToWhatsApp();
-          break;
-        case DisconnectReason.timedOut:
-          console.log('Connection TimedOut, Reconnecting...');
-          connectToWhatsApp();
-          break;
-        default:
-          waSocket.end(
-            `Unknown DisconnectReason: ${reason}|${lastDisconnect.error}`
-          );
-      }
+      const reason = new Boom(lastDisconnect.error).output.statusCode;
+      handleDisconnectReason(reason);
     } else if (connection === 'open') {
-      console.log('opened connection');
-      let groups = Object.values(await waSocket.groupFetchAllParticipating());
-      groups.forEach((group) => {
-        console.log(
-          'id_group: ' + group.id + ' || Nama Group: ' + group.subject
-        );
-      });
-      return;
+      console.log('Connection opened');
+      displayGroupInfo();
     }
-    if (update.qr) {
-      qr = update.qr;
-      updateQR('qr');
-    } else if (qr === undefined) {
-      updateQR('loading');
-    } else if (update.connection === 'open') {
-      updateQR('qrscanned');
-      return;
+
+    if (qr) {
+      qrCode = qr;
+      updateQRCode('qr');
+    } else if (qrCode === undefined) {
+      updateQRCode('loading');
+    } else if (connection === 'open') {
+      updateQRCode('qrscanned');
     }
   });
+
   waSocket.ev.on('creds.update', saveCreds);
-  waSocket.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type === 'notify') {
-      const message = messages[0];
-      if (!message.key.fromMe) {
-        const pesan = message.message.conversation;
-        const noWa = message.key.remoteJid;
+  waSocket.ev.on('messages.upsert', handleMessageUpsert);
+}
 
-        await waSocket.readMessages([message.key]);
+function handleDisconnectReason(reason) {
+  switch (reason) {
+    case DisconnectReason.badSession:
+      console.log('Bad session file, please delete and scan again');
+      waSocket.logout();
+      break;
+    case DisconnectReason.connectionClosed:
+    case DisconnectReason.connectionLost:
+    case DisconnectReason.restartRequired:
+    case DisconnectReason.timedOut:
+      console.log('Connection issue, reconnecting...');
+      connectToWhatsApp();
+      break;
+    case DisconnectReason.connectionReplaced:
+    case DisconnectReason.loggedOut:
+      console.log('Session replaced or logged out, please scan again');
+      waSocket.logout();
+      break;
+    default:
+      waSocket.end(`Unknown disconnect reason: ${reason}`);
+  }
+}
 
-        const pesanMasuk = pesan.toLowerCase();
-        if (!message.key.fromMe && pesanMasuk === 'ping') {
-          await waSocket.sendMessage(
-            noWa,
-            { text: 'Pong' },
-            { quoted: message }
-          );
-        } else {
-          await waSocket.sendMessage(
-            noWa,
-            { text: "I'm online" },
-            { quoted: message }
-          );
-        }
-      }
-    }
+async function displayGroupInfo() {
+  const groups = Object.values(await waSocket.groupFetchAllParticipating());
+  groups.forEach((group) => {
+    console.log(`Group ID: ${group.id} || Group Name: ${group.subject}`);
   });
 }
 
-io.on('connection', async (socket) => {
+function handleMessageUpsert({ messages, type }) {
+  if (type !== 'notify') return;
+
+  const message = messages[0];
+  if (message.key.fromMe) return;
+
+  console.log(message, '<<<<<<<<<< this is the message');
+
+  const textMessage =
+    message.message.extendedTextMessage?.text || message.message.conversation;
+  const senderId = message.key.remoteJid;
+
+  waSocket.readMessages([message.key]);
+
+  const lowerCaseMessage = textMessage.toLowerCase();
+  if (lowerCaseMessage === 'ping') {
+    waSocket.sendMessage(senderId, { text: 'Pong' }, { quoted: message });
+  } else {
+    waSocket.sendMessage(senderId, { text: "I'm online" }, { quoted: message });
+  }
+}
+
+io.on('connection', (socket) => {
   ioSocket = socket;
   if (isConnected()) {
-    updateQR('connected');
-  } else if (qr) {
-    updateQR('qr');
+    updateQRCode('connected');
+  } else if (qrCode) {
+    updateQRCode('qr');
   }
 });
 
-const isConnected = () => {
-  return waSocket?.user;
-};
+const isConnected = () => !!waSocket?.user;
 
-const updateQR = (data) => {
-  switch (data) {
-    case 'qr':
-      qrcode.toDataURL(qr, (err, url) => {
+const updateQRCode = (status) => {
+  const statuses = {
+    qr: () => {
+      qrcode.toDataURL(qrCode, (err, url) => {
         ioSocket?.emit('qr', url);
-        ioSocket?.emit('log', 'QR Code received, please scan!');
+        ioSocket?.emit('log', 'QR code received, please scan it!');
       });
-      break;
-    case 'connected':
+    },
+    connected: () => {
       ioSocket?.emit('qrstatus', './assets/check.svg');
-      ioSocket?.emit('log', 'WhatsApp terhubung!');
-      break;
-    case 'qrscanned':
+      ioSocket?.emit('log', 'WhatsApp connected!');
+    },
+    qrscanned: () => {
       ioSocket?.emit('qrstatus', './assets/check.svg');
-      ioSocket?.emit('log', 'QR Code Telah discan!');
-      break;
-    case 'loading':
+      ioSocket?.emit('log', 'QR code scanned!');
+    },
+    loading: () => {
       ioSocket?.emit('qrstatus', './assets/loader.gif');
-      ioSocket?.emit('log', 'Registering QR Code, please wait!');
-      break;
-    default:
-      break;
-  }
+      ioSocket?.emit('log', 'Registering QR code, please wait!');
+    },
+  };
+
+  if (statuses[status]) statuses[status]();
 };
 
 app.post('/send-message', async (req, res) => {
@@ -203,31 +180,32 @@ app.post('/send-message', async (req, res) => {
     const { token } = req.headers;
 
     if (!message || !phone) {
-      return res.status(500).json({
+      return res.status(400).json({
         status: false,
-        response: 'Text message and phone number must be filled',
+        response: 'Message and phone number are required',
       });
     }
 
-    if (phone[0] !== '6' && phone[1] !== '2') {
-      return res.status(500).json({
+    if (!phone.startsWith('62')) {
+      return res.status(400).json({
         status: false,
         response: 'Phone number must start with 62',
       });
     }
 
     if (!token) {
-      return res.status(500).json({
+      return res.status(403).json({
         status: false,
-        response: 'You are not authorized, please contact the owner',
+        response: 'Unauthorized access, please contact the owner',
       });
     }
 
     if (isConnected()) {
       const exists = await waSocket.onWhatsApp(`${phone}@s.whatsapp.net`);
       if (exists?.jid || (exists && exists[0]?.jid)) {
+        const jid = exists.jid || exists[0].jid;
         waSocket
-          .sendMessage(exists.jid || exists[0].jid, { text: message })
+          .sendMessage(jid, { text: message })
           .then((result) =>
             res.status(200).json({ status: true, response: result })
           )
@@ -235,15 +213,14 @@ app.post('/send-message', async (req, res) => {
             res.status(500).json({ status: false, response: err })
           );
       } else {
-        res.status(500).json({
-          status: false,
-          response: `${phone} is not registered.`,
-        });
+        res
+          .status(404)
+          .json({ status: false, response: `${phone} is not registered.` });
       }
     } else {
       res.status(500).json({
         status: false,
-        response: `WhatsApp is not connected, please connect first.`,
+        response: 'WhatsApp is not connected, please connect first.',
       });
     }
   } catch (err) {
@@ -251,7 +228,7 @@ app.post('/send-message', async (req, res) => {
   }
 });
 
-connectToWhatsApp().catch((error) => console.log(error));
+connectToWhatsApp().catch((error) => console.log('Connection error:', error));
 
 server.listen(port, () => {
   console.log(`Server running on port ${port}`);
