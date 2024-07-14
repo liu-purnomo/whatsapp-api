@@ -226,7 +226,7 @@ app.post('/send-message', async (req, res) => {
 
 app.get('/scan', (req, res) => {
   if (isConnected()) {
-    res.sendFile(path.join(__dirname, 'client', 'server.html'));
+    res.sendFile(path.join(__dirname, 'client', 'index.html'));
   } else {
     res.sendFile(path.join(__dirname, 'client', 'client.html'));
   }
