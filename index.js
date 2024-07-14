@@ -31,14 +31,6 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'client', 'index.html'));
 });
 
-// Function to capitalize words
-function capitalizeWords(text) {
-  return text
-    .split(' ')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-}
-
 const store = makeInMemoryStore({
   logger: log().child({ level: 'silent', stream: 'store' }),
 });
