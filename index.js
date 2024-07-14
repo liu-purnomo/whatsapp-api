@@ -27,10 +27,6 @@ const port = process.env.PORT || 8000;
 
 app.use('/assets', express.static(path.join(__dirname, 'client', 'assets')));
 
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'client', 'index.html'));
-});
-
 const store = makeInMemoryStore({
   logger: log().child({ level: 'silent', stream: 'store' }),
 });
@@ -216,11 +212,11 @@ app.post('/send-message', async (req, res) => {
   }
 });
 
-app.get('/scan', (req, res) => {
+app.get('/', (req, res) => {
   if (isConnected()) {
     res.sendFile(path.join(__dirname, 'client', 'index.html'));
   } else {
-    res.sendFile(path.join(__dirname, 'client', 'client.html'));
+    res.sendFile(path.join(__dirname, 'client', 'server.html'));
   }
 });
 
