@@ -118,7 +118,11 @@ function handleMessageUpsert({ messages, type }) {
   if (lowerCaseMessage === 'ping') {
     waSocket.sendMessage(senderId, { text: 'Pong' }, { quoted: message });
   } else {
-    waSocket.sendMessage(senderId, { text: "I'm online" }, { quoted: message });
+    waSocket.sendMessage(
+      senderId,
+      { text: "I'm bot, Please don't send me messages" },
+      { quoted: message }
+    );
   }
 }
 
